@@ -183,6 +183,51 @@
             color: white;
             text-decoration: underline;
         }
+
+        @media (max-width: 768px) {
+            h1 {
+                font-size: 1.75rem;
+            }
+
+            header {
+                margin-bottom: 24px;
+            }
+
+            .search-box,
+            .chart-container {
+                padding: 16px;
+            }
+
+            #chart {
+                height: 350px;
+            }
+        }
+
+        @media (max-width: 480px) {
+            body {
+                padding: 12px;
+            }
+
+            h1 {
+                font-size: 1.4rem;
+            }
+
+            .subtitle {
+                font-size: 0.95rem;
+            }
+
+            .input-group {
+                flex-direction: column;
+            }
+
+            button {
+                padding: 14px 20px;
+            }
+
+            #chart {
+                height: 280px;
+            }
+        }
     </style>
 </head>
 <body>
@@ -349,7 +394,7 @@
                         title: {
                             display: true,
                             text: title,
-                            font: { size: 20, weight: 'bold' },
+                            font: { size: window.innerWidth < 480 ? 14 : 20, weight: 'bold' },
                             color: '#333'
                         },
                         legend: {
