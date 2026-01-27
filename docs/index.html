@@ -1,0 +1,413 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TV Series Ratings Visualizer</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+            color: #fff;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        header {
+            text-align: center;
+            margin-bottom: 40px;
+        }
+
+        h1 {
+            font-size: 2.5rem;
+            margin-bottom: 10px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        }
+
+        .subtitle {
+            font-size: 1.1rem;
+            opacity: 0.9;
+        }
+
+        .search-box {
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 12px;
+            padding: 30px;
+            margin-bottom: 30px;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.1);
+        }
+
+        .input-group {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+
+        input[type="text"] {
+            flex: 1;
+            padding: 15px 20px;
+            font-size: 1rem;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            outline: none;
+            transition: border-color 0.3s;
+        }
+
+        input[type="text"]:focus {
+            border-color: #667eea;
+        }
+
+        button {
+            padding: 15px 40px;
+            font-size: 1rem;
+            font-weight: 600;
+            color: white;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        button:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+        }
+
+        button:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
+        .examples {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
+        .example-tag {
+            padding: 8px 16px;
+            background: #f5f5f5;
+            color: #667eea;
+            border-radius: 20px;
+            font-size: 0.9rem;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .example-tag:hover {
+            background: #667eea;
+            color: white;
+            transform: scale(1.05);
+        }
+
+        .chart-container {
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 12px;
+            padding: 30px;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.1);
+            display: none;
+        }
+
+        .chart-container.visible {
+            display: block;
+        }
+
+        #chart {
+            position: relative;
+            height: 500px;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 40px;
+            font-size: 1.2rem;
+            color: rgba(255, 255, 255, 0.9);
+        }
+
+        .spinner {
+            border: 4px solid rgba(255, 255, 255, 0.3);
+            border-radius: 50%;
+            border-top: 4px solid white;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 20px auto;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .error {
+            background: #ff5252;
+            color: white;
+            padding: 15px 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            display: none;
+        }
+
+        .error.visible {
+            display: block;
+        }
+
+        .info {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 15px 20px;
+            border-radius: 8px;
+            margin-top: 20px;
+            font-size: 0.9rem;
+        }
+
+        footer {
+            text-align: center;
+            margin-top: 40px;
+            opacity: 0.8;
+        }
+
+        footer a {
+            color: white;
+            text-decoration: underline;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>📺 TV Series Ratings Visualizer</h1>
+            <p class="subtitle">Discover how episode ratings trend across seasons</p>
+        </header>
+
+        <div class="search-box">
+            <div class="input-group">
+                <input
+                    type="text"
+                    id="seriesInput"
+                    placeholder="Enter a TV series name (e.g., Breaking Bad)"
+                    autocomplete="off"
+                >
+                <button id="searchBtn" onclick="fetchRatings()">Visualize</button>
+            </div>
+            <div class="examples">
+                <span style="color: #666; font-size: 0.9rem; margin-right: 10px;">Try:</span>
+                <span class="example-tag" onclick="loadExample('Breaking Bad')">Breaking Bad</span>
+                <span class="example-tag" onclick="loadExample('Game of Thrones')">Game of Thrones</span>
+                <span class="example-tag" onclick="loadExample('The Wire')">The Wire</span>
+                <span class="example-tag" onclick="loadExample('Stranger Things')">Stranger Things</span>
+            </div>
+        </div>
+
+        <div id="error" class="error"></div>
+        <div id="loading" class="loading" style="display: none;">
+            <div class="spinner"></div>
+            <p>Fetching ratings from IMDb...</p>
+        </div>
+
+        <div id="chartContainer" class="chart-container">
+            <canvas id="chart"></canvas>
+        </div>
+
+        <div class="info">
+            <strong>How it works:</strong> This tool fetches episode ratings from IMDb and visualizes them across all seasons.
+            Each season is shown in a different color with a trend line. Data is scraped in real-time, so it may take a few seconds.
+        </div>
+
+        <footer>
+            <p>Made with Chart.js • Data from IMDb • <a href="https://github.com/fnanni-0/movies-and-tvseries-stuff" target="_blank">View on GitHub</a></p>
+        </footer>
+    </div>
+
+    <script>
+        const API_URL = 'https://tv-series-ratings.vercel.app/api';
+        let chart = null;
+
+        // Allow Enter key to trigger search
+        document.getElementById('seriesInput').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                fetchRatings();
+            }
+        });
+
+        function loadExample(series) {
+            document.getElementById('seriesInput').value = series;
+            fetchRatings();
+        }
+
+        async function fetchRatings() {
+            const seriesName = document.getElementById('seriesInput').value.trim();
+
+            if (!seriesName) {
+                showError('Please enter a TV series name');
+                return;
+            }
+
+            // Show loading, hide error and chart
+            document.getElementById('loading').style.display = 'block';
+            document.getElementById('error').classList.remove('visible');
+            document.getElementById('chartContainer').classList.remove('visible');
+            document.getElementById('searchBtn').disabled = true;
+
+            try {
+                const response = await fetch(`${API_URL}?title=${encodeURIComponent(seriesName)}`);
+                const data = await response.json();
+
+                if (!data.success) {
+                    throw new Error(data.error || 'Failed to fetch ratings');
+                }
+
+                renderChart(data);
+            } catch (error) {
+                showError(`Error: ${error.message}`);
+            } finally {
+                document.getElementById('loading').style.display = 'none';
+                document.getElementById('searchBtn').disabled = false;
+            }
+        }
+
+        function showError(message) {
+            const errorDiv = document.getElementById('error');
+            errorDiv.textContent = message;
+            errorDiv.classList.add('visible');
+        }
+
+        function renderChart(data) {
+            const { title, seasons } = data;
+
+            // Flatten all episodes with their global index
+            let episodeIndex = 0;
+            const datasets = [];
+            const colors = [
+                '#FF6384', '#36A2EB', '#FFCE56', '#4BC0C0',
+                '#9966FF', '#FF9F40', '#FF6384', '#C9CBCF'
+            ];
+
+            seasons.forEach((seasonRatings, seasonIdx) => {
+                const seasonData = seasonRatings.map((rating, idx) => ({
+                    x: episodeIndex + idx,
+                    y: rating
+                }));
+
+                // Scatter plot for episodes
+                datasets.push({
+                    label: `Season ${seasonIdx + 1}`,
+                    data: seasonData,
+                    backgroundColor: colors[seasonIdx % colors.length],
+                    borderColor: colors[seasonIdx % colors.length],
+                    pointRadius: 6,
+                    pointHoverRadius: 8,
+                    showLine: false
+                });
+
+                // Calculate trend line
+                const xValues = seasonData.map(d => d.x);
+                const yValues = seasonData.map(d => d.y);
+                const trend = calculateLinearRegression(xValues, yValues);
+
+                datasets.push({
+                    label: `Season ${seasonIdx + 1} Trend`,
+                    data: xValues.map(x => ({ x, y: trend.slope * x + trend.intercept })),
+                    borderColor: colors[seasonIdx % colors.length],
+                    backgroundColor: 'transparent',
+                    borderWidth: 2,
+                    pointRadius: 0,
+                    showLine: true,
+                    tension: 0
+                });
+
+                episodeIndex += seasonRatings.length;
+            });
+
+            // Destroy existing chart
+            if (chart) {
+                chart.destroy();
+            }
+
+            // Create new chart
+            const ctx = document.getElementById('chart').getContext('2d');
+            chart = new Chart(ctx, {
+                type: 'scatter',
+                data: { datasets },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        title: {
+                            display: true,
+                            text: title,
+                            font: { size: 20, weight: 'bold' },
+                            color: '#333'
+                        },
+                        legend: {
+                            display: true,
+                            labels: {
+                                filter: (item) => !item.text.includes('Trend'),
+                                color: '#333'
+                            }
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    return `Rating: ${context.parsed.y.toFixed(1)}`;
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        x: {
+                            title: {
+                                display: true,
+                                text: 'Episode Number',
+                                font: { size: 14 },
+                                color: '#666'
+                            },
+                            grid: { color: '#e0e0e0' },
+                            ticks: { color: '#666' }
+                        },
+                        y: {
+                            title: {
+                                display: true,
+                                text: 'IMDb Rating',
+                                font: { size: 14 },
+                                color: '#666'
+                            },
+                            min: 0,
+                            max: 10,
+                            grid: { color: '#e0e0e0' },
+                            ticks: { color: '#666' }
+                        }
+                    }
+                }
+            });
+
+            document.getElementById('chartContainer').classList.add('visible');
+        }
+
+        function calculateLinearRegression(x, y) {
+            const n = x.length;
+            const sumX = x.reduce((a, b) => a + b, 0);
+            const sumY = y.reduce((a, b) => a + b, 0);
+            const sumXY = x.reduce((acc, xi, i) => acc + xi * y[i], 0);
+            const sumXX = x.reduce((acc, xi) => acc + xi * xi, 0);
+
+            const slope = (n * sumXY - sumX * sumY) / (n * sumXX - sumX * sumX);
+            const intercept = (sumY - slope * sumX) / n;
+
+            return { slope, intercept };
+        }
+    </script>
+</body>
+</html>
