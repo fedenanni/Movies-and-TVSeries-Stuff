@@ -201,6 +201,10 @@
             #chart {
                 height: 60vh;
             }
+
+            .chart-container {
+                overflow-x: auto;
+            }
         }
 
         @media (max-width: 480px) {
@@ -224,8 +228,13 @@
                 padding: 14px 20px;
             }
 
+            .chart-container {
+                padding: 10px;
+            }
+
             #chart {
-                height: 70vh;
+                height: 75vh;
+                min-width: 500px;
             }
         }
     </style>
@@ -341,6 +350,8 @@
                 '#9966FF', '#FF9F40', '#FF6384', '#C9CBCF'
             ];
 
+            const isMobile = window.innerWidth < 480;
+
             seasons.forEach((seasonRatings, seasonIdx) => {
                 const seasonData = seasonRatings.map((rating, idx) => ({
                     x: episodeIndex + idx,
@@ -353,8 +364,8 @@
                     data: seasonData,
                     backgroundColor: colors[seasonIdx % colors.length],
                     borderColor: colors[seasonIdx % colors.length],
-                    pointRadius: 6,
-                    pointHoverRadius: 8,
+                    pointRadius: isMobile ? 4 : 6,
+                    pointHoverRadius: isMobile ? 6 : 8,
                     showLine: false
                 });
 
@@ -399,9 +410,12 @@
                         },
                         legend: {
                             display: true,
+                            position: isMobile ? 'bottom' : 'top',
                             labels: {
                                 filter: (item) => !item.text.includes('Trend'),
-                                color: '#333'
+                                color: '#333',
+                                boxWidth: isMobile ? 10 : 40,
+                                font: { size: isMobile ? 10 : 12 }
                             }
                         },
                         tooltip: {
@@ -417,23 +431,23 @@
                             title: {
                                 display: true,
                                 text: 'Episode Number',
-                                font: { size: 14 },
+                                font: { size: isMobile ? 11 : 14 },
                                 color: '#666'
                             },
                             grid: { color: '#e0e0e0' },
-                            ticks: { color: '#666' }
+                            ticks: { color: '#666', font: { size: isMobile ? 9 : 12 } }
                         },
                         y: {
                             title: {
                                 display: true,
                                 text: 'IMDb Rating',
-                                font: { size: 14 },
+                                font: { size: isMobile ? 11 : 14 },
                                 color: '#666'
                             },
                             min: 0,
                             max: 10,
                             grid: { color: '#e0e0e0' },
-                            ticks: { color: '#666' }
+                            ticks: { color: '#666', font: { size: isMobile ? 9 : 12 } }
                         }
                     }
                 }
