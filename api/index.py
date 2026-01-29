@@ -107,6 +107,9 @@ def get_scores(title: str) -> dict:
 from http.server import BaseHTTPRequestHandler
 from urllib.parse import parse_qs, urlparse
 
+# Cache duration: 30 days in seconds
+CACHE_MAX_AGE_SECONDS = 30 * 24 * 60 * 60
+
 
 class handler(BaseHTTPRequestHandler):
     """Vercel serverless function handler."""
@@ -118,12 +121,19 @@ class handler(BaseHTTPRequestHandler):
 
         if not title:
             response = {"success": False, "error": "Missing 'title' parameter"}
+            cache_header = "no-store"
         else:
             response = get_scores(title)
+            # Cache successful responses at CDN level for 30 days
+            if response.get("success"):
+                cache_header = f"s-maxage={CACHE_MAX_AGE_SECONDS}, stale-while-revalidate"
+            else:
+                cache_header = "no-store"
 
         self.send_response(200)
         self.send_header("Content-Type", "application/json")
         self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Cache-Control", cache_header)
         self.end_headers()
         self.wfile.write(json.dumps(response).encode())
 
