@@ -125,8 +125,9 @@ class handler(BaseHTTPRequestHandler):
         else:
             response = get_scores(title)
             # Cache successful responses at CDN level for 30 days
+            # Use max-age=0 so browsers don't cache, but s-maxage for Vercel edge
             if response.get("success"):
-                cache_header = f"s-maxage={CACHE_MAX_AGE_SECONDS}, stale-while-revalidate"
+                cache_header = f"max-age=0, s-maxage={CACHE_MAX_AGE_SECONDS}, stale-while-revalidate={CACHE_MAX_AGE_SECONDS}"
             else:
                 cache_header = "no-store"
 
@@ -134,6 +135,7 @@ class handler(BaseHTTPRequestHandler):
         self.send_header("Content-Type", "application/json")
         self.send_header("Access-Control-Allow-Origin", "*")
         self.send_header("Cache-Control", cache_header)
+        self.send_header("CDN-Cache-Control", cache_header)
         self.end_headers()
         self.wfile.write(json.dumps(response).encode())
 
