@@ -1,11 +1,21 @@
 """Vercel serverless function for fetching TV series ratings."""
 
 import json
+import os
 import re
 import time
+from collections import defaultdict
 
 import requests
 from bs4 import BeautifulSoup
+
+# CORS: Set to specific domain or "*" for open access
+ALLOWED_ORIGIN = os.environ.get("ALLOWED_ORIGIN", "https://fedenanni.github.io")
+
+# Rate limiting (in-memory - resets on cold starts, limited effectiveness in serverless)
+RATE_LIMIT_REQUESTS = 10  # max requests per window
+RATE_LIMIT_WINDOW_SECONDS = 60  # time window
+_request_counts: dict[str, list[float]] = defaultdict(list)
 
 HEADERS = {
     "User-Agent": (
@@ -100,8 +110,12 @@ def get_scores(title: str) -> dict:
             "imdb_id": imdb_id,
             "seasons": all_scores,
         }
-    except Exception as e:
+    except ValueError as e:
+        # User-facing errors (e.g., "No TV series found")
         return {"success": False, "error": str(e)}
+    except Exception:
+        # Hide internal errors from clients
+        return {"success": False, "error": "An error occurred while fetching data"}
 
 
 from http.server import BaseHTTPRequestHandler
@@ -111,10 +125,48 @@ from urllib.parse import parse_qs, urlparse
 CACHE_MAX_AGE_SECONDS = 30 * 24 * 60 * 60
 
 
+def _is_rate_limited(client_ip: str) -> bool:
+    """Check if client has exceeded rate limit. Returns True if limited."""
+    now = time.time()
+    window_start = now - RATE_LIMIT_WINDOW_SECONDS
+
+    # Clean old entries and get recent requests
+    _request_counts[client_ip] = [t for t in _request_counts[client_ip] if t > window_start]
+
+    if len(_request_counts[client_ip]) >= RATE_LIMIT_REQUESTS:
+        return True
+
+    _request_counts[client_ip].append(now)
+    return False
+
+
 class handler(BaseHTTPRequestHandler):
     """Vercel serverless function handler."""
 
+    def _get_client_ip(self) -> str:
+        """Get client IP from headers (Vercel forwards real IP)."""
+        return (
+            self.headers.get("x-forwarded-for", "").split(",")[0].strip()
+            or self.headers.get("x-real-ip", "")
+            or self.client_address[0]
+        )
+
     def do_GET(self):
+        client_ip = self._get_client_ip()
+
+        # Check rate limit
+        if _is_rate_limited(client_ip):
+            self.send_response(429)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Access-Control-Allow-Origin", ALLOWED_ORIGIN)
+            self.send_header("Retry-After", str(RATE_LIMIT_WINDOW_SECONDS))
+            self.end_headers()
+            self.wfile.write(json.dumps({
+                "success": False,
+                "error": "Rate limit exceeded. Please try again later."
+            }).encode())
+            return
+
         parsed = urlparse(self.path)
         params = parse_qs(parsed.query)
         title = params.get("title", [""])[0]
@@ -133,7 +185,7 @@ class handler(BaseHTTPRequestHandler):
 
         self.send_response(200)
         self.send_header("Content-Type", "application/json")
-        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Access-Control-Allow-Origin", ALLOWED_ORIGIN)
         self.send_header("Cache-Control", cache_header)
         self.send_header("CDN-Cache-Control", cache_header)
         self.end_headers()
@@ -141,7 +193,7 @@ class handler(BaseHTTPRequestHandler):
 
     def do_OPTIONS(self):
         self.send_response(200)
-        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Access-Control-Allow-Origin", ALLOWED_ORIGIN)
         self.send_header("Access-Control-Allow-Methods", "GET, OPTIONS")
         self.send_header("Access-Control-Allow-Headers", "Content-Type")
         self.end_headers()
