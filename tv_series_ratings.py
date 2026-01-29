@@ -1,16 +1,73 @@
 #!/usr/bin/env python3
 """Plot IMDb episode ratings for a TV series."""
 
+import json
 import re
 import sys
 import time
+from datetime import datetime, timedelta
+from pathlib import Path
 
 import numpy as np
 import matplotlib.pyplot as plt
 import requests
 from bs4 import BeautifulSoup
 
+CACHE_FILE = Path(__file__).parent / ".series_cache.json"
+CACHE_MAX_AGE_DAYS = 30
+
 plt.style.use("dark_background")
+
+
+def _normalize_title(title: str) -> str:
+    """Normalize title for use as cache key."""
+    return title.lower().strip()
+
+
+def _load_cache() -> dict:
+    """Load the cache from disk."""
+    if CACHE_FILE.exists():
+        try:
+            return json.loads(CACHE_FILE.read_text())
+        except (json.JSONDecodeError, OSError):
+            return {}
+    return {}
+
+
+def _save_cache(cache: dict) -> None:
+    """Save the cache to disk."""
+    CACHE_FILE.write_text(json.dumps(cache, indent=2))
+
+
+def _is_cache_valid(entry: dict) -> bool:
+    """Check if a cache entry is still valid (less than CACHE_MAX_AGE_DAYS old)."""
+    if "timestamp" not in entry:
+        return False
+    cached_time = datetime.fromisoformat(entry["timestamp"])
+    return datetime.now() - cached_time < timedelta(days=CACHE_MAX_AGE_DAYS)
+
+
+def _get_cached_scores(title: str) -> tuple[list[list[float]], str] | None:
+    """Return cached scores if available and valid, otherwise None."""
+    cache = _load_cache()
+    key = _normalize_title(title)
+    if key in cache and _is_cache_valid(cache[key]):
+        entry = cache[key]
+        print(f"Using cached data for '{entry['display_title']}' (cached on {entry['timestamp'][:10]})")
+        return entry["scores"], entry["display_title"]
+    return None
+
+
+def _cache_scores(title: str, scores: list[list[float]], display_title: str) -> None:
+    """Store scores in the cache."""
+    cache = _load_cache()
+    key = _normalize_title(title)
+    cache[key] = {
+        "scores": scores,
+        "display_title": display_title,
+        "timestamp": datetime.now().isoformat(),
+    }
+    _save_cache(cache)
 
 HEADERS = {
     "User-Agent": (
@@ -84,11 +141,18 @@ def get_episode_ratings(imdb_id: str, season: int) -> list[float]:
     return ratings
 
 
-def get_scores(title: str) -> tuple[list[list[float]], str]:
+def get_scores(title: str, force_refresh: bool = False) -> tuple[list[list[float]], str]:
     """Fetch all season episode ratings for a TV series title.
 
     Returns (list of per-season rating lists, display_title).
+    Uses cached data if available and less than CACHE_MAX_AGE_DAYS old.
+    Set force_refresh=True to bypass the cache.
     """
+    if not force_refresh:
+        cached = _get_cached_scores(title)
+        if cached is not None:
+            return cached
+
     imdb_id, display_title = search_series(title)
     print(f"Found: {display_title} ({imdb_id})")
     seasons = get_season_numbers(imdb_id)
@@ -100,6 +164,8 @@ def get_scores(title: str) -> tuple[list[list[float]], str]:
         if len(ratings) > 1:
             all_scores.append(ratings)
         time.sleep(0.3)  # be polite
+
+    _cache_scores(title, all_scores, display_title)
     return all_scores, display_title
 
 
