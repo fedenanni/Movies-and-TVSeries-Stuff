@@ -131,3 +131,4 @@ dmypy.json
 
 # Series ratings cache
 .series_cache.json
+node_modules/*

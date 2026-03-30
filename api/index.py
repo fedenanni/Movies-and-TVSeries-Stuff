@@ -2,12 +2,10 @@
 
 import json
 import os
-import re
 import time
 from collections import defaultdict
 
 import requests
-from bs4 import BeautifulSoup
 
 # CORS: Set to specific domain or "*" for open access
 ALLOWED_ORIGIN = os.environ.get("ALLOWED_ORIGIN", "https://fedenanni.github.io")
@@ -17,77 +15,103 @@ RATE_LIMIT_REQUESTS = 10  # max requests per window
 RATE_LIMIT_WINDOW_SECONDS = 60  # time window
 _request_counts: dict[str, list[float]] = defaultdict(list)
 
+IMDB_GRAPHQL_URL = "https://graphql.imdb.com/"
+IMDB_SUGGESTION_URL = "https://v2.sg.media-imdb.com/suggestion"
+
 HEADERS = {
     "User-Agent": (
         "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
         "AppleWebKit/537.36 (KHTML, like Gecko) "
         "Chrome/120.0.0.0 Safari/537.36"
     ),
-    "Accept-Language": "en-US,en;q=0.9",
+    "Content-Type": "application/json",
 }
 
 
 def search_series(title: str) -> tuple[str, str]:
     """Search IMDb for a TV series and return (imdb_id, display_title)."""
+    # Use IMDb suggestion API: /suggestion/{first_letter}/{query}.json
+    query = title.lower().replace(" ", "+")
+    first_letter = query[0] if query else "a"
     r = requests.get(
-        "https://www.imdb.com/find/",
-        params={"q": title, "s": "tt", "ttype": "tv"},
-        headers=HEADERS,
+        f"{IMDB_SUGGESTION_URL}/{first_letter}/{query}.json",
         timeout=10,
     )
     r.raise_for_status()
-    soup = BeautifulSoup(r.text, "html.parser")
-    for a in soup.find_all("a", href=re.compile(r"/title/(tt\d+)")):
-        text = a.get_text(strip=True)
-        if text:
-            imdb_id = re.search(r"(tt\d+)", a["href"]).group(1)
-            return imdb_id, text
+    data = r.json()
+    for item in data.get("d", []):
+        # Filter for TV series only (qid: tvSeries or tvMiniSeries)
+        if item.get("qid") in ("tvSeries", "tvMiniSeries"):
+            return item["id"], item["l"]
     raise ValueError(f"No TV series found for '{title}'")
 
 
 def get_season_numbers(imdb_id: str) -> list[int]:
-    """Return list of season numbers for a series."""
-    r = requests.get(
-        f"https://www.imdb.com/title/{imdb_id}/episodes/",
+    """Return list of season numbers for a series via IMDb GraphQL API."""
+    query = """
+    query {
+        title(id: "%s") {
+            episodes {
+                seasons { number }
+            }
+        }
+    }
+    """ % imdb_id
+    r = requests.post(
+        IMDB_GRAPHQL_URL,
         headers=HEADERS,
+        json={"query": query},
         timeout=10,
     )
     r.raise_for_status()
-    soup = BeautifulSoup(r.text, "html.parser")
-    seasons = set()
-    for a in soup.find_all("a", href=re.compile(r"season=(\d+)")):
-        m = re.search(r"season=(\d+)", a["href"])
-        if m:
-            text = a.get_text(strip=True)
-            if text.isdigit():
-                seasons.add(int(m.group(1)))
-    return sorted(seasons)
+    data = r.json()
+    seasons = data.get("data", {}).get("title", {}).get("episodes", {}).get("seasons", [])
+    return sorted(s["number"] for s in seasons if s.get("number") is not None)
 
 
 def get_episode_ratings(imdb_id: str, season: int) -> list[float]:
-    """Return list of episode ratings for a given season."""
-    r = requests.get(
-        f"https://www.imdb.com/title/{imdb_id}/episodes/",
-        params={"season": season},
+    """Return list of episode ratings for a given season via IMDb GraphQL API."""
+    query = """
+    query {
+        title(id: "%s") {
+            episodes {
+                episodes(first: 50, filter: {includeSeasons: ["%d"]}) {
+                    edges {
+                        node {
+                            series {
+                                displayableEpisodeNumber {
+                                    episodeNumber { episodeNumber }
+                                }
+                            }
+                            ratingsSummary { aggregateRating }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    """ % (imdb_id, season)
+    r = requests.post(
+        IMDB_GRAPHQL_URL,
         headers=HEADERS,
+        json={"query": query},
         timeout=10,
     )
     r.raise_for_status()
-    soup = BeautifulSoup(r.text, "html.parser")
+    data = r.json()
+    edges = (data.get("data", {}).get("title", {}).get("episodes", {})
+             .get("episodes", {}).get("edges", []))
     ratings = []
-    for article in soup.find_all("article", class_="episode-item-wrapper"):
-        # Skip specials (E0)
-        h4 = article.find("h4")
-        if h4 and re.search(r"\.E0\b", h4.get_text()):
+    for edge in edges:
+        node = edge.get("node", {})
+        # Skip specials (episode number "0")
+        ep_num = (node.get("series", {}).get("displayableEpisodeNumber", {})
+                  .get("episodeNumber", {}).get("episodeNumber", ""))
+        if ep_num == "0":
             continue
-        span = article.find("span", class_="ipc-rating-star--rating")
-        if span:
-            try:
-                val = float(span.get_text(strip=True))
-                if 0.0 < val <= 10.0:
-                    ratings.append(val)
-            except ValueError:
-                continue
+        rating = node.get("ratingsSummary", {}).get("aggregateRating")
+        if rating is not None and 0.0 < rating <= 10.0:
+            ratings.append(float(rating))
     return ratings
 
 
